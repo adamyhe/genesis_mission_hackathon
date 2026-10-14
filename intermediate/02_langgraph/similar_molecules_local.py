@@ -17,8 +17,8 @@ from langchain.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, interrupt
-from pydantic import BaseModel
+from langgraph.types import Command, RetryPolicy, interrupt
+from pydantic import BaseModel, ValidationError
 from rdkit import Chem
 
 dotenv.load_dotenv(dotenv.find_dotenv("settings.env", usecwd=True))
@@ -150,7 +150,12 @@ def summarize(state: MoleculeState) -> dict:
 
 def build_graph():
     builder = StateGraph(MoleculeState)
-    builder.add_node("propose", propose)
+    # The MAG sometimes cuts off the JSON reply; ask again instead of failing the run
+    builder.add_node(
+        "propose",
+        propose,
+        retry_policy=RetryPolicy(max_attempts=3, retry_on=ValidationError),
+    )
     builder.add_node("confirm", confirm)
     builder.add_node("run_locally", run_locally)
     builder.add_node("summarize", summarize)
