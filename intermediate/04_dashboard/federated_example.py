@@ -22,8 +22,28 @@ from globus_compute_sdk import Executor as GlobusExecutor
 
 async def main(user_agent_id: UUID) -> None:
     """Launch MonitoredAgents across facilities with Globus Compute."""
-    executors = {
-        "nersc": GlobusExecutor(
+    executors = {}
+    if os.environ.get("AURORA_ENDPOINT_ID"):
+        executors["aurora"] = GlobusExecutor(
+            endpoint_id=os.environ["AURORA_ENDPOINT_ID"],
+            user_endpoint_config={
+                "account": os.environ["AURORA_ACCOUNT"],
+                # hpc-bridge reads the PBS queue from "partition"
+                "partition": os.environ["AURORA_QUEUE"],
+                "walltime": "00:10:00",
+                "scheduler_options": "#PBS -l filesystems=home:flare",
+                # Compute nodes reach the exchange only through the ALCF proxy.
+                # This replaces the template's worker_init, so activate the repo venv too.
+                "worker_init": (
+                    "export http_proxy=http://proxy.alcf.anl.gov:3128"
+                    " https_proxy=http://proxy.alcf.anl.gov:3128;"
+                    " source $HOME/genesis_mission_hackathon/.venv/bin/activate"
+                ),
+            },
+        )
+    # Skip a facility whose endpoint ID is not set in settings.env
+    if os.environ.get("PERLMUTTER_ENDPOINT_ID"):
+        executors["nersc"] = GlobusExecutor(
             endpoint_id=os.environ["PERLMUTTER_ENDPOINT_ID"],
             user_endpoint_config={
                 "account": os.environ["PERLMUTTER_ACCOUNT"],
@@ -31,7 +51,7 @@ async def main(user_agent_id: UUID) -> None:
                 # Perlmutter rejects jobs that do not select CPU or GPU nodes
                 "scheduler_options": f"#SBATCH --constraint=cpu\n#SBATCH --reservation={os.environ['PERLMUTTER_RESERVATION']}",
             },
-        ),
+        )
         #'anvil': GlobusExecutor(
         #     endpoint_id='5aafb4c1-27b2-40d8-a038-a0277611868f',
         #     user_endpoint_config={'worker_init': 'source ~/setup_env.sh'}),
@@ -45,8 +65,7 @@ async def main(user_agent_id: UUID) -> None:
         #        'account': 'ModCon',
         #    },
         # ),
-        "local": ProcessPoolExecutor(max_workers=4),
-    }
+    executors["local"] = ProcessPoolExecutor(max_workers=4)
 
     async with await Manager.from_exchange_factory(
         factory=HttpExchangeFactory(),
@@ -66,8 +85,8 @@ async def main(user_agent_id: UUID) -> None:
             )
             handles.append(spinner)
 
-        # Force a user query prompt from a remote agent
-        await spinner.trigger_user_query()
+        # Force a user query prompt from a remote agent (the first executor)
+        await handles[0].trigger_user_query()
 
         sleeper = await manager.launch(
             Sleeper,
