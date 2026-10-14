@@ -16,8 +16,9 @@ import dotenv
 from academy.exchange.cloud import HttpExchangeFactory
 from academy.identifier import AgentId
 from academy.manager import Manager
-from academy_dashboard.agents import Sleeper, Spinner
 from globus_compute_sdk import Executor as GlobusExecutor
+
+from intermediate.custom_agents.dashboard_agents import Sleeper, Spinner
 
 
 async def main(user_agent_id: UUID) -> None:
